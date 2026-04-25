@@ -19,6 +19,8 @@ Sistem validasi expert diplomasi dirancang untuk:
 - ✓ Fine-tuning model dengan expertise domain
 - ✓ Mengukur model performance vs expert judgment
 
+> Untuk panduan validasi khusus diplomasi / hubungan luar negeri, lihat `EXPERT_VALIDATION_DIPLOMACY.md`
+
 ---
 
 ## Framework Validasi

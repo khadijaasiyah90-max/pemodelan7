@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 from bertopic import BERTopic
 from sentence_transformers import SentenceTransformer
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
 from transformers import pipeline
+from datetime import datetime
 import re
 import string
 import logging
@@ -178,6 +180,180 @@ def convert_figure_to_html(fig):
     """Konversi Plotly figure ke HTML bytes untuk download"""
     return fig.to_html().encode('utf-8')
 
+
+def initialize_expert_validation_state():
+    if 'expert_stance_annotations' not in st.session_state:
+        st.session_state['expert_stance_annotations'] = []
+    if 'expert_topic_annotations' not in st.session_state:
+        st.session_state['expert_topic_annotations'] = []
+    if 'analysis_done' not in st.session_state:
+        st.session_state['analysis_done'] = False
+
+
+def _export_validation_to_csv(data):
+    if not data:
+        return None
+    df = pd.DataFrame(data)
+    return df.to_csv(index=False).encode('utf-8')
+
+
+def render_expert_validation_ui():
+    initialize_expert_validation_state()
+
+    st.header("🧑‍💼 Validasi Ahli Diplomasi")
+    st.write("Gunakan antarmuka ini untuk menyimpan penilaian expert terhadap stance model dan topik diplomasi.")
+
+    expert_name = st.text_input("Nama Expert:", key="expert_name")
+    expert_org = st.text_input("Organisasi/Institusi:", key="expert_org")
+
+    if not st.session_state['analysis_done']:
+        st.warning("Jalankan analisis terlebih dahulu di mode Analisis agar hasil model tersedia untuk divalidasi.")
+        return
+
+    validation_type = st.selectbox(
+        "Pilih Jenis Validasi",
+        ["Validasi Stance", "Validasi Topik"],
+        key="validation_type"
+    )
+
+    if validation_type == "Validasi Stance":
+        comments_df = st.session_state['comments_df']
+        comments_df = comments_df.reset_index(drop=False)
+        selected_index = st.selectbox(
+            "Pilih komentar untuk divalidasi:",
+            comments_df.index,
+            format_func=lambda idx: f"Komentar #{idx + 1}"
+        )
+        row = comments_df.loc[selected_index]
+
+        st.subheader("Komentar untuk divalidasi")
+        st.write(f"**Original Text:** {row['full_text_comments']}")
+        st.write(f"**Preprocessed Text:** {row['full_text_comments_preprocessed']}")
+        st.write(f"**Prediksi Model:** {row.get('sentiment', 'N/A')} (Confidence: {row.get('confidence', 0):.2f})")
+
+        expert_stance = st.radio(
+            "Expert Stance:",
+            ["POSITIVE", "NEGATIVE", "NEUTRAL"],
+            horizontal=True,
+            key="expert_stance_selection"
+        )
+        expert_confidence = st.select_slider(
+            "Expert Confidence:",
+            options=["Very Confident", "Confident", "Somewhat", "Low", "Ambiguous"],
+            key="expert_confidence_selection"
+        )
+        agreement = st.checkbox("Setuju dengan prediksi model", key="expert_agreement")
+        disagreement_reason = ""
+        if not agreement:
+            disagreement_reason = st.text_area("Alasan perbedaan:", key="expert_disagreement_reason")
+        expert_notes = st.text_area("Catatan ahli:", height=120, key="expert_notes")
+
+        if st.button("💾 Simpan Validasi Komentar", key="save_comment_validation"):
+            annotation = {
+                'comment_row': int(row['index']),
+                'original_text': row['full_text_comments'],
+                'preprocessed_text': row['full_text_comments_preprocessed'],
+                'model_prediction': row.get('sentiment', ''),
+                'model_confidence': float(row.get('confidence', 0) or 0),
+                'expert_stance': expert_stance,
+                'expert_confidence': expert_confidence,
+                'agreement': agreement,
+                'disagreement_reason': disagreement_reason,
+                'expert_notes': expert_notes,
+                'expert_name': expert_name,
+                'expert_org': expert_org,
+                'saved_at': datetime.now().isoformat()
+            }
+            st.session_state['expert_stance_annotations'].append(annotation)
+            st.success("Validasi komentar berhasil disimpan.")
+
+        if st.session_state['expert_stance_annotations']:
+            st.subheader("Hasil Validasi Komentar")
+            st.dataframe(pd.DataFrame(st.session_state['expert_stance_annotations']))
+            csv_data = _export_validation_to_csv(st.session_state['expert_stance_annotations'])
+            if csv_data is not None:
+                st.download_button(
+                    label="💾 Unduh Validasi Komentar (CSV)",
+                    data=csv_data,
+                    file_name="expert_comment_validation.csv",
+                    mime="text/csv"
+                )
+
+    else:
+        topic_df = st.session_state.get('topic_validation_df', pd.DataFrame())
+        topic_docs_mapping = st.session_state.get('topic_docs_mapping', {})
+
+        if topic_df.empty:
+            st.warning("Data topik tidak tersedia. Jalankan analisis terlebih dahulu.")
+            return
+
+        selected_topic = st.selectbox(
+            "Pilih Topic ID untuk divalidasi:",
+            topic_df['Topic'].tolist(),
+            key="selected_topic_id"
+        )
+        topic_row = topic_df[topic_df['Topic'] == selected_topic].iloc[0]
+
+        st.subheader(f"Topik {selected_topic}")
+        st.write(f"**Top Words:** {topic_row['Top Words']}")
+        st.write(f"**Topic Title:** {topic_row.get('Name', 'N/A')}")
+
+        sample_docs = topic_docs_mapping.get(int(selected_topic), [])
+        if sample_docs:
+            with st.expander("Contoh dokumen topik"):
+                for idx, sample in enumerate(sample_docs, 1):
+                    st.write(f"{idx}. {sample}")
+
+        relevance = st.slider("Relevance terhadap kebijakan luar negeri:", 1, 5, 3, key="topic_relevance")
+        coherence = st.slider("Coherence topik:", 1, 5, 3, key="topic_coherence")
+        policy_alignment = st.slider("Policy Alignment:", 1, 5, 3, key="topic_policy_alignment")
+        international_context = st.slider("International Context:", 1, 5, 3, key="topic_international_context")
+        interpretability = st.slider("Interpretability:", 1, 5, 3, key="topic_interpretability")
+        completeness = st.slider("Completeness:", 1, 5, 3, key="topic_completeness")
+
+        status = st.radio(
+            "Status Validasi:",
+            ["VALID", "NEEDS REVISION", "INVALID"],
+            horizontal=True,
+            key="topic_validation_status"
+        )
+        expert_label = st.text_input("Suggested label/topik interpretasi:", key="topic_expert_label")
+        topic_notes = st.text_area("Catatan ahli:", height=120, key="topic_expert_notes")
+
+        if st.button("💾 Simpan Validasi Topik", key="save_topic_validation"):
+            topic_annotation = {
+                'topic_id': int(selected_topic),
+                'top_words': topic_row['Top Words'],
+                'topic_name': topic_row.get('Name', ''),
+                'relevance': relevance,
+                'coherence': coherence,
+                'policy_alignment': policy_alignment,
+                'international_context': international_context,
+                'interpretability': interpretability,
+                'completeness': completeness,
+                'status': status,
+                'expert_label': expert_label,
+                'expert_notes': topic_notes,
+                'expert_name': expert_name,
+                'expert_org': expert_org,
+                'saved_at': datetime.now().isoformat()
+            }
+            st.session_state['expert_topic_annotations'].append(topic_annotation)
+            st.success("Validasi topik berhasil disimpan.")
+
+        if st.session_state['expert_topic_annotations']:
+            st.subheader("Hasil Validasi Topik")
+            st.dataframe(pd.DataFrame(st.session_state['expert_topic_annotations']))
+            csv_data = _export_validation_to_csv(st.session_state['expert_topic_annotations'])
+            if csv_data is not None:
+                st.download_button(
+                    label="💾 Unduh Validasi Topik (CSV)",
+                    data=csv_data,
+                    file_name="expert_topic_validation.csv",
+                    mime="text/csv"
+                )
+
+
 def display_data_statistics(df):
     """Menampilkan statistik data yang menarik"""
     st.subheader("📈 Statistik Data")
@@ -290,18 +466,29 @@ if uploaded_file:
     # Tampilkan statistik data
     display_data_statistics(df)
 
-    # Asumsikan kolom: full_text (posts), created_at (timestamp), full_text_comments (comments)
-    required_cols = ['full_text', 'created_at', 'full_text_comments']
-    if not all(col in df.columns for col in required_cols):
-        st.error(f"Dataset harus memiliki kolom: {', '.join(required_cols)}")
-    else:
+    app_mode = st.sidebar.selectbox(
+        "Mode Aplikasi",
+        ["Analisis", "Validasi Ahli Diplomasi"]
+    )
+    st.sidebar.info("Mode Validasi Ahli Diplomasi digunakan setelah analisis selesai.")
+
+    if app_mode == "Analisis":
+        # Asumsikan kolom: full_text (posts), created_at (timestamp), full_text_comments (comments)
+        required_cols = ['full_text', 'created_at', 'full_text_comments']
+        if not all(col in df.columns for col in required_cols):
+            st.error(f"Dataset harus memiliki kolom: {', '.join(required_cols)}")
+            st.stop()
+
         # Proses posts untuk topic modeling
         posts_df = df[['full_text', 'created_at']].dropna().drop_duplicates()
         posts_df['created_at'] = pd.to_datetime(posts_df['created_at'])
         posts_df = posts_df.sort_values(by='created_at')
 
         # Proses comments untuk stance analysis
-        comments_df = df[['full_text_comments']].dropna()
+        comment_cols = ['full_text_comments']
+        if 'expert_stance' in df.columns:
+            comment_cols.append('expert_stance')
+        comments_df = df[comment_cols].dropna(subset=['full_text_comments'])
 
         st.info("Memuat model...")
         embedding_model = load_embedding_model()
@@ -514,6 +701,21 @@ if uploaded_file:
             st.subheader("📌 Top Topics")
             top_topics_df = topic_model.get_topic_info()
             st.dataframe(top_topics_df, use_container_width=True)
+
+            # Persist results for expert validation
+            st.session_state['analysis_done'] = True
+            st.session_state['comments_df'] = comments_df.copy()
+            topic_validation_df = top_topics_df[top_topics_df['Topic'] != -1][['Topic', 'Name']].copy()
+            topic_validation_df['Top Words'] = topic_validation_df['Topic'].apply(
+                lambda topic_id: ", ".join([word for word, _ in topic_model.get_topic(int(topic_id))[:10]])
+            )
+            st.session_state['topic_validation_df'] = topic_validation_df
+            topic_docs_mapping = {}
+            for topic_id, group in posts_df.groupby('Topik'):
+                if topic_id == -1:
+                    continue
+                topic_docs_mapping[int(topic_id)] = group['full_text_preprocessed'].head(5).tolist()
+            st.session_state['topic_docs_mapping'] = topic_docs_mapping
             
             # Download button untuk Top Topics
             with col2:
@@ -554,6 +756,38 @@ if uploaded_file:
             
             st.subheader("📋 Hasil Stance Analysis (20 Data Teratas)")
             st.dataframe(comments_df.head(20), use_container_width=True)
+            
+            # Evaluation metrics if expert ground truth is available
+            if 'expert_stance' in comments_df.columns:
+                y_true = comments_df['expert_stance'].astype(str)
+                y_pred = comments_df['sentiment'].astype(str)
+
+                accuracy = accuracy_score(y_true, y_pred)
+                precision_macro = precision_score(y_true, y_pred, average="macro", zero_division=0)
+                recall_macro = recall_score(y_true, y_pred, average="macro", zero_division=0)
+                f1_macro = f1_score(y_true, y_pred, average="macro", zero_division=0)
+                precision_weighted = precision_score(y_true, y_pred, average="weighted", zero_division=0)
+                recall_weighted = recall_score(y_true, y_pred, average="weighted", zero_division=0)
+                f1_weighted = f1_score(y_true, y_pred, average="weighted", zero_division=0)
+                report_text = classification_report(y_true, y_pred, zero_division=0)
+
+                st.subheader("📊 Evaluation Metrics")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Accuracy", f"{accuracy:.3f}")
+                    st.metric("Precision (macro)", f"{precision_macro:.3f}")
+                with col2:
+                    st.metric("Recall (macro)", f"{recall_macro:.3f}")
+                    st.metric("F1 Score (macro)", f"{f1_macro:.3f}")
+                with col3:
+                    st.metric("Precision (weighted)", f"{precision_weighted:.3f}")
+                    st.metric("Recall (weighted)", f"{recall_weighted:.3f}")
+                    st.metric("F1 Score (weighted)", f"{f1_weighted:.3f}")
+
+                with st.expander("📄 Classification Report"):
+                    st.text(report_text)
+            else:
+                st.info("Upload dataset dengan kolom 'expert_stance' untuk menampilkan evaluasi metrik (accuracy, precision, recall, F1).")
             
             # Add explanation about neutral classification
             with st.expander("ℹ️ Penjelasan Klasifikasi Netral"):
@@ -640,3 +874,5 @@ Dibuat pada: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
                     key="download_report"
                 )
             logging.info("Analysis completed successfully")
+    elif app_mode == "Validasi Ahli Diplomasi":
+        render_expert_validation_ui()
