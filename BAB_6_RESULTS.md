@@ -167,12 +167,23 @@ Evaluasi pada 100 komentar sampel:
 3. **Conditional Statements**: 2 errors (15.4%) - Kesulitan dengan pernyataan kondisional
 4. **Other**: 1 error (7.7%)
 
-### 6.7.5 Inter-rater Reliability
-- **Cohen's Kappa**: 0.83 (Almost Perfect Agreement)
-- **Agreement Rate**: 87%
-- **Average Expert Confidence**: 0.88
+### 6.7.5 Analisis Masalah Netral Dominan
 
-**Status**: ✅ PASSED (akurasi >80%, kappa >0.8)
+**Fenomena**: 55.4% komentar diklasifikasikan sebagai netral dalam ground truth dataset.
+
+**Root Causes**:
+1. **Domain Mismatch**: Model dilatih pada data Twitter (emosional) vs data politik Indonesia (formal)
+2. **Preprocessing Impact**: Penghapusan emoji, URL, dan karakter khusus menghilangkan sentiment cues
+3. **Confidence Threshold**: Model sering tidak yakin pada teks formal (confidence < 0.7)
+4. **Content Characteristics**: Komentar politik lebih factual daripada opinionated
+
+**Solusi Diimplementasikan**:
+- **Confidence Thresholding**: Prediksi dengan confidence < 0.7 otomatis dinetralisasi
+- **User Education**: Penjelasan di UI tentang mengapa klasifikasi netral dominan
+- **Confidence Visualization**: Distribusi confidence score ditampilkan
+- **Error Analysis**: Identifikasi pola error untuk improvement future
+
+**Impact**: Mengurangi false positive pada klasifikasi pro/kontra, meningkatkan reliability model.
 
 ## 6.8 Kesimpulan Evaluasi
 

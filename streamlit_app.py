@@ -54,7 +54,7 @@ def cached_topics_over_time(_topic_model, _docs, _timestamps, _nr_bins=20):
 
 @st.cache_data
 def cached_stance_analysis(_sentiment_model, _comments_list, _batch_size=20):
-    """Cached wrapper for stance analysis on comments"""
+    """Cached wrapper for stance analysis on comments with confidence threshold"""
     logging.info(f"Starting cached stance analysis on {len(_comments_list)} comments")
     sentiments = []
     confidences = []
@@ -68,8 +68,16 @@ def cached_stance_analysis(_sentiment_model, _comments_list, _batch_size=20):
         
         batch_sentiments = _sentiment_model(batch)
         for sentiment in batch_sentiments:
-            sentiments.append(sentiment['label'])
-            confidences.append(sentiment['score'])
+            label = sentiment['label']
+            confidence = sentiment['score']
+            
+            # Apply confidence threshold - if below 0.7, classify as neutral to reduce false positives
+            if confidence < 0.7 and label != 'NEUTRAL':
+                label = 'NEUTRAL'
+                logging.debug(f"Low confidence {confidence:.2f} for {sentiment['label']}, reclassified as NEUTRAL")
+            
+            sentiments.append(label)
+            confidences.append(confidence)
     
     logging.info("Completed cached stance analysis")
     return sentiments, confidences
@@ -546,6 +554,29 @@ if uploaded_file:
             
             st.subheader("📋 Hasil Stance Analysis (20 Data Teratas)")
             st.dataframe(comments_df.head(20), use_container_width=True)
+            
+            # Add explanation about neutral classification
+            with st.expander("ℹ️ Penjelasan Klasifikasi Netral"):
+                st.markdown("""
+                **Mengapa banyak komentar diklasifikasikan sebagai Netral?**
+                
+                1. **Sifat Data**: Komentar politik Indonesia cenderung formal dan factual
+                2. **Model Training**: Model dilatih pada data Twitter yang lebih emosional  
+                3. **Confidence Threshold**: Prediksi dengan confidence < 0.7 otomatis dinetralisasi
+                4. **Preprocessing**: Emoji dan karakter khusus yang membawa sentimen dihapus
+                
+                **Distribusi Confidence Score:**
+                - **Tinggi (0.8+)**: Stance kuat, jarang netral
+                - **Sedang (0.6-0.8)**: Ambiguous, sering dinetralisasi  
+                - **Rendah (<0.6)**: Tidak yakin, otomatis netral
+                """)
+            
+            # Show confidence distribution
+            if 'confidence' in comments_df.columns:
+                st.subheader("📊 Distribusi Confidence Score")
+                confidence_counts = pd.cut(comments_df['confidence'], bins=[0, 0.6, 0.7, 0.8, 1.0], 
+                                         labels=['<0.6', '0.6-0.7', '0.7-0.8', '0.8+']).value_counts()
+                st.bar_chart(confidence_counts)
             
             # Download button untuk Stance Analysis Results
             col1, col2, col3 = st.columns(3)

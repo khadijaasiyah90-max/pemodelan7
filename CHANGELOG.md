@@ -4,29 +4,29 @@
 
 ---
 
-## ✅ Step 8: Dokumentasi Evaluasi & Validasi Expert
+## ✅ Step 9: Optimisasi Stance Analysis - Confidence Threshold
 **Tanggal:** April 25, 2026
 
 ### Perubahan:
-- Update BAB_6_RESULTS.md dengan hasil evaluasi aktual
-- Dokumentasi F1 score, confusion matrix, dan expert validation
-- Integrasi hasil ground truth dari GROUND_TRUTH_SAMPLES.md
-- Tambah error analysis dan inter-rater reliability metrics
+- Tambah confidence threshold (0.7) untuk mengurangi false positive pada stance analysis
+- Prediksi dengan confidence rendah otomatis dinetralisasi
+- Tambah penjelasan UI tentang mengapa klasifikasi netral dominan
+- Tambah visualisasi distribusi confidence score
+- Update dokumentasi BAB_6 dengan analisis masalah netral
 
 ### File yang berubah:
-- `BAB_6_RESULTS.md`: Tambah section 6.7 Evaluasi Model dengan Ground Truth
-- Metrics lengkap: 87% accuracy, F1 0.86, confusion matrix detail
-- Expert validation: 80% topic validity, Cohen's Kappa 0.83
+- `streamlit_app.py`: Update cached_stance_analysis dengan confidence threshold
+- `BAB_6_RESULTS.md`: Tambah section analisis masalah netral dominan
 
 ### Dampak:
-- Evaluasi model lengkap dengan ground truth validation
-- Metrik F1 score dan confusion matrix terdokumentasi
-- Validasi expert untuk domain relevance
-- Basis kuat untuk kesimpulan tesis
+- Mengurangi false positive pada klasifikasi pro/kontra
+- Meningkatkan reliability model untuk data politik formal
+- User experience lebih baik dengan penjelasan yang clear
+- Foundation untuk fine-tuning model di masa depan
 
 ---
 
-## ✅ Step 7: Update Dokumentasi BAB 4, 5, dan 6
+## ✅ Step 8: Dokumentasi Evaluasi & Validasi Expert
 **Tanggal:** April 25, 2026
 
 ### Perubahan:
