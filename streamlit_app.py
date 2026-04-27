@@ -658,14 +658,19 @@ if uploaded_file:
             )
             
             # Stance Filter
-            available_stances = sorted(comments_df['sentiment'].dropna().unique())
-            selected_stances = st.sidebar.multiselect(
-                "Filter by Stance",
-                options=available_stances,
-                default=available_stances,
-                key="stance_filter",
-                help="Select stances to include in visualizations"
-            )
+            if 'sentiment' in comments_df.columns:
+                available_stances = sorted(comments_df['sentiment'].dropna().unique())
+                selected_stances = st.sidebar.multiselect(
+                    "Filter by Stance",
+                    options=available_stances,
+                    default=available_stances,
+                    key="stance_filter",
+                    help="Select stances to include in visualizations"
+                )
+            else:
+                st.sidebar.warning("⚠️ Stance analysis belum selesai. Jalankan analisis terlebih dahulu.")
+                available_stances = []
+                selected_stances = []
             
             # Confidence Threshold
             min_confidence = st.sidebar.slider(
@@ -929,10 +934,13 @@ if uploaded_file:
                 
                 # Apply filters
                 filtered_posts_df = posts_df[posts_df['Topik'].isin(selected_topics)] if selected_topics else posts_df
-                filtered_comments_df = comments_df[
-                    (comments_df['sentiment'].isin(selected_stances)) &
-                    (comments_df['confidence'] >= min_confidence)
-                ] if selected_stances else comments_df
+                if selected_stances and 'sentiment' in comments_df.columns and 'confidence' in comments_df.columns:
+                    filtered_comments_df = comments_df[
+                        (comments_df['sentiment'].isin(selected_stances)) &
+                        (comments_df['confidence'] >= min_confidence)
+                    ]
+                else:
+                    filtered_comments_df = comments_df
                 
                 st.info(f"📊 **Filtered Results**: {len(filtered_posts_df)} posts, {len(filtered_comments_df)} comments")
             else:
