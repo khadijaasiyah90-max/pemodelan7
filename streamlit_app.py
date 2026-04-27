@@ -49,6 +49,18 @@ def cached_fit_transform(_topic_model, _docs):
     return topics, probs
 
 @st.cache_data
+def cached_topics_over_time(_topic_model, _docs, _timestamps, _nr_bins=20):
+    """Cached wrapper for BERTopic topics_over_time calculation"""
+    logging.info("Calculating cached topics over time")
+    try:
+        result = _topic_model.topics_over_time(_docs, _timestamps, nr_bins=_nr_bins)
+    except ValueError as e:
+        logging.warning(f"Error with nr_bins={_nr_bins}: {e}. Retrying with nr_bins=10.")
+        result = _topic_model.topics_over_time(_docs, _timestamps, nr_bins=10)
+    logging.info("Completed cached topics over time calculation")
+    return result
+
+@st.cache_data
 def calculate_topic_coherence(_topic_model, _docs, coherence_type='c_v'):
     """
     Calculate topic coherence using gensim CoherenceModel
