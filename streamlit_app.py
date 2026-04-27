@@ -1225,67 +1225,161 @@ if uploaded_file:
 
             # Summary sentiment
             sentiment_counts = filtered_comments_df['sentiment'].value_counts()
+            total_comments = len(filtered_comments_df)
             
-            st.subheader("📊 Ringkasan Sentimen/Stance")
+            # Summary Metrics
+            st.subheader("📊 Ringkasan Hasil Analisis Stance")
             
-            # Create interactive Plotly bar chart
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=sentiment_counts.index,
-                    y=sentiment_counts.values,
-                    marker_color=['#FF6B6B', '#4ECDC4', '#45B7D1'],  # Colors for negative, neutral, positive
-                    hovertemplate='<b>%{x}</b><br>Count: %{y}<br>Click to see samples<extra></extra>'
-                )
-            ])
+            col1, col2, col3 = st.columns(3)
             
-            fig.update_layout(
-                title="Sentiment Distribution",
-                xaxis_title="Sentiment",
-                yaxis_title="Count",
-                showlegend=False
+            # Calculate percentages
+            positive_pct = (sentiment_counts.get('POSITIVE', 0) / total_comments * 100) if total_comments > 0 else 0
+            negative_pct = (sentiment_counts.get('NEGATIVE', 0) / total_comments * 100) if total_comments > 0 else 0
+            neutral_pct = (sentiment_counts.get('NEUTRAL', 0) / total_comments * 100) if total_comments > 0 else 0
+            
+            with col1:
+                st.metric("👍 Support", f"{sentiment_counts.get('POSITIVE', 0)}", f"{positive_pct:.1f}%")
+            with col2:
+                st.metric("👎 Oppose", f"{sentiment_counts.get('NEGATIVE', 0)}", f"{negative_pct:.1f}%")
+            with col3:
+                st.metric("😐 Neutral", f"{sentiment_counts.get('NEUTRAL', 0)}", f"{neutral_pct:.1f}%")
+            
+            # Insight Otomatis
+            st.subheader("🧠 Insight Utama")
+            if positive_pct > negative_pct and positive_pct > neutral_pct:
+                st.success(f"**Mayoritas mendukung** ({positive_pct:.1f}%) - Sentimen positif dominan")
+            elif negative_pct > positive_pct and negative_pct > neutral_pct:
+                st.error(f"**Mayoritas menentang** ({negative_pct:.1f}%) - Perlu perhatian khusus")
+            else:
+                st.info(f"**Opini terbagi** - Netral ({neutral_pct:.1f}%) atau seimbang")
+            
+            # Visualisasi dengan opsi chart type
+            st.subheader("📈 Distribusi Stance")
+            
+            chart_type = st.radio(
+                "Pilih jenis visualisasi:",
+                ["Bar Chart", "Pie Chart"],
+                horizontal=True,
+                key="stance_chart_type"
             )
+            
+            if chart_type == "Bar Chart":
+                # Create interactive Plotly bar chart
+                fig = go.Figure(data=[
+                    go.Bar(
+                        x=sentiment_counts.index,
+                        y=sentiment_counts.values,
+                        marker_color=['#FF6B6B', '#4ECDC4', '#45B7D1'],  # Colors for negative, neutral, positive
+                        hovertemplate='<b>%{x}</b><br>Count: %{y}<br>Percentage: %{customdata:.1f}%<extra></extra>',
+                        customdata=[negative_pct, neutral_pct, positive_pct]
+                    )
+                ])
+                
+                fig.update_layout(
+                    title="Sentiment Distribution (Bar Chart)",
+                    xaxis_title="Sentiment",
+                    yaxis_title="Count",
+                    showlegend=False
+                )
+            else:
+                # Pie Chart
+                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']  # negative, neutral, positive
+                fig = go.Figure(data=[
+                    go.Pie(
+                        labels=sentiment_counts.index,
+                        values=sentiment_counts.values,
+                        marker_colors=colors,
+                        hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>',
+                        textinfo='label+percent',
+                        textposition='inside'
+                    )
+                ])
+                
+                fig.update_layout(
+                    title="Sentiment Distribution (Pie Chart)",
+                    showlegend=True
+                )
             
             st.plotly_chart(fig, use_container_width=True)
             
             # Save the plot
             fig.write_html(os.path.join(results_dir, f"sentiment_distribution_{timestamp}.html"))
             
-            # Sample Comments Display
-            st.subheader("📝 Sample Comments by Sentiment")
+            # Sample Comments Display dengan Tabs
+            st.subheader("📝 Sample Comments by Stance")
             
-            # Select sentiment to show samples
-            selected_sentiment = st.selectbox(
-                "Select sentiment to view sample comments:",
-                options=sentiment_counts.index.tolist(),
-                key="sentiment_sample_selector",
-                help="Choose a sentiment category to see random sample comments"
-            )
+            # Create tabs for each sentiment
+            tab1, tab2, tab3 = st.tabs(["👍 Support", "👎 Oppose", "😐 Neutral"])
             
-            if selected_sentiment:
-                # Get sample comments for selected sentiment
-                sentiment_comments = filtered_comments_df[
-                    filtered_comments_df['sentiment'] == selected_sentiment
-                ]['full_text_comments'].dropna()
-                
-                if not sentiment_comments.empty:
-                    # Show random samples (up to 5)
-                    num_samples = min(5, len(sentiment_comments))
-                    sample_comments = sentiment_comments.sample(n=num_samples, random_state=42)
+            def display_sample_comments(sentiment_type, tab):
+                with tab:
+                    # Get sample comments for selected sentiment
+                    sentiment_comments = filtered_comments_df[
+                        filtered_comments_df['sentiment'] == sentiment_type
+                    ]['full_text_comments'].dropna()
                     
-                    st.markdown(f"**Showing {num_samples} random {selected_sentiment.lower()} comments:**")
+                    if not sentiment_comments.empty:
+                        # Show random samples (up to 5)
+                        num_samples = min(5, len(sentiment_comments))
+                        sample_comments = sentiment_comments.sample(n=num_samples, random_state=42)
+                        
+                        st.markdown(f"**{num_samples} contoh komentar {sentiment_type.lower()}:**")
+                        
+                        for idx, comment in enumerate(sample_comments, 1):
+                            with st.expander(f"💬 Sample {idx}"):
+                                st.write(comment)
+                                # Show preprocessed version too
+                                preprocessed = filtered_comments_df[
+                                    filtered_comments_df['full_text_comments'] == comment
+                                ]['full_text_comments_preprocessed'].iloc[0] if len(filtered_comments_df[
+                                    filtered_comments_df['full_text_comments'] == comment
+                                ]) > 0 else "N/A"
+                                st.markdown(f"**Preprocessed:** {preprocessed}")
+                    else:
+                        st.info(f"Tidak ada komentar {sentiment_type.lower()} dengan filter saat ini.")
+            
+            # Display tabs content
+            display_sample_comments("POSITIVE", tab1)
+            display_sample_comments("NEGATIVE", tab2)
+            display_sample_comments("NEUTRAL", tab3)
+            
+            # WordCloud per Stance
+            st.subheader("☁️ Word Clouds per Stance")
+            
+            wc_col1, wc_col2, wc_col3 = st.columns(3)
+            
+            def generate_wordcloud(sentiment_type, column, title):
+                with column:
+                    # Get comments for this sentiment
+                    sentiment_comments = filtered_comments_df[
+                        filtered_comments_df['sentiment'] == sentiment_type
+                    ]['full_text_comments_preprocessed'].dropna()
                     
-                    for idx, comment in enumerate(sample_comments, 1):
-                        with st.expander(f"💬 Sample {idx}"):
-                            st.write(comment)
-                            # Show preprocessed version too
-                            preprocessed = filtered_comments_df[
-                                filtered_comments_df['full_text_comments'] == comment
-                            ]['full_text_comments_preprocessed'].iloc[0] if len(filtered_comments_df[
-                                filtered_comments_df['full_text_comments'] == comment
-                            ]) > 0 else "N/A"
-                            st.markdown(f"**Preprocessed:** {preprocessed}")
-                else:
-                    st.info(f"No {selected_sentiment.lower()} comments available with current filters.")
+                    if not sentiment_comments.empty:
+                        # Combine all text
+                        all_text = ' '.join(sentiment_comments)
+                        
+                        # Generate word cloud
+                        wordcloud = WordCloud(
+                            width=300, 
+                            height=200,
+                            background_color='white',
+                            colormap='viridis' if sentiment_type == 'POSITIVE' else ('Reds' if sentiment_type == 'NEGATIVE' else 'Blues'),
+                            max_words=50
+                        ).generate(all_text)
+                        
+                        # Display
+                        fig, ax = plt.subplots(figsize=(3, 2))
+                        ax.imshow(wordcloud, interpolation='bilinear')
+                        ax.axis('off')
+                        ax.set_title(title, fontsize=10)
+                        st.pyplot(fig)
+                    else:
+                        st.info(f"Tidak ada data untuk {title.lower()}")
+            
+            generate_wordcloud("POSITIVE", wc_col1, "👍 Support Words")
+            generate_wordcloud("NEGATIVE", wc_col2, "👎 Oppose Words") 
+            generate_wordcloud("NEUTRAL", wc_col3, "😐 Neutral Words")
             
             # Download button untuk Summary Sentiment
             summary_df = sentiment_counts.reset_index()
