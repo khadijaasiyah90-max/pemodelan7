@@ -10,3 +10,5 @@ hdbscan
 transformers
 torch
 gensim
+wordcloud
+matplotlib

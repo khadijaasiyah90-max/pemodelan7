@@ -8,6 +8,9 @@ from datetime import datetime
 import re
 import string
 import logging
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Dynamic Topic Modeling & Stance Analysis", layout="wide")
 
@@ -472,6 +475,63 @@ if uploaded_file:
     )
     st.sidebar.info("Mode Validasi Ahli Diplomasi digunakan setelah analisis selesai.")
 
+    # ========== SIDEBAR FILTERS (Available after analysis) ==========
+    if st.session_state.get('analysis_done', False) and app_mode == "Analisis":
+        st.sidebar.markdown("---")
+        st.sidebar.header("📊 Data Filters")
+        
+        # Get available topics and stances
+        posts_df = st.session_state.get('posts_df', pd.DataFrame())
+        comments_df = st.session_state.get('comments_df', pd.DataFrame())
+        
+        if not posts_df.empty and not comments_df.empty:
+            # Topic Filter
+            available_topics = sorted([t for t in posts_df['Topik'].unique() if t != -1])
+            selected_topics = st.sidebar.multiselect(
+                "Filter by Topics",
+                options=available_topics,
+                default=available_topics,
+                key="topic_filter",
+                help="Select topics to include in visualizations"
+            )
+            
+            # Stance Filter
+            available_stances = sorted(comments_df['sentiment'].dropna().unique())
+            selected_stances = st.sidebar.multiselect(
+                "Filter by Stance",
+                options=available_stances,
+                default=available_stances,
+                key="stance_filter",
+                help="Select stances to include in visualizations"
+            )
+            
+            # Confidence Threshold
+            min_confidence = st.sidebar.slider(
+                "Minimum Confidence Score",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.0,
+                step=0.05,
+                key="confidence_filter",
+                help="Filter comments by minimum confidence score"
+            )
+            
+            # Apply Filters Button
+            if st.sidebar.button("🔄 Apply Filters", use_container_width=True):
+                st.session_state['filters_applied'] = True
+                st.rerun()
+            
+            # Reset Filters Button
+            if st.sidebar.button("🔄 Reset Filters", use_container_width=True):
+                st.session_state['filters_applied'] = False
+                # Reset to defaults
+                st.session_state['topic_filter'] = available_topics
+                st.session_state['stance_filter'] = available_stances
+                st.session_state['confidence_filter'] = 0.0
+                st.rerun()
+            
+            st.sidebar.info("ℹ️ Filters apply to all visualizations below")
+
     if app_mode == "Analisis":
         # Asumsikan kolom: full_text (posts), created_at (timestamp), full_text_comments (comments)
         required_cols = ['full_text', 'created_at', 'full_text_comments']
@@ -683,6 +743,26 @@ if uploaded_file:
 
             st.success("✅ Topic Modeling Selesai!")
 
+            # ========== APPLY FILTERS TO DATA ==========
+            if st.session_state.get('filters_applied', False):
+                # Get filter values
+                selected_topics = st.session_state.get('topic_filter', [])
+                selected_stances = st.session_state.get('stance_filter', [])
+                min_confidence = st.session_state.get('confidence_filter', 0.0)
+                
+                # Apply filters
+                filtered_posts_df = posts_df[posts_df['Topik'].isin(selected_topics)] if selected_topics else posts_df
+                filtered_comments_df = comments_df[
+                    (comments_df['sentiment'].isin(selected_stances)) &
+                    (comments_df['confidence'] >= min_confidence)
+                ] if selected_stances else comments_df
+                
+                st.info(f"📊 **Filtered Results**: {len(filtered_posts_df)} posts, {len(filtered_comments_df)} comments")
+            else:
+                # Use unfiltered data
+                filtered_posts_df = posts_df
+                filtered_comments_df = comments_df
+
             st.subheader("📈 Topics Over Time")
             fig = topic_model.visualize_topics_over_time(topics_over_time)
             st.plotly_chart(fig, use_container_width=True)
@@ -698,6 +778,62 @@ if uploaded_file:
                     key="download_topics_over_time"
                 )
 
+            # ========== WORD CLOUDS PER TOPIC ==========
+            st.subheader("☁️ Word Clouds per Topic")
+            
+            # Get topic model from session state
+            topic_model = st.session_state.get('topic_model')
+            
+            if topic_model is not None:
+                # Get available topics for word clouds
+                available_topics = [topic for topic in topic_model.get_topics().keys() if topic != -1]
+                
+                if available_topics:
+                    col1, col2 = st.columns([1, 3])
+                    
+                    with col1:
+                        selected_topic_wc = st.selectbox(
+                            "Select Topic for Word Cloud",
+                            options=available_topics,
+                            format_func=lambda x: f"Topic {x}: {topic_model.get_topic_info(x)['Name'].iloc[0] if x in topic_model.get_topic_info()['Topic'].values else f'Topic {x}'}",
+                            key="wordcloud_topic_selector"
+                        )
+                    
+                    with col2:
+                        if selected_topic_wc is not None:
+                            # Get topic words and weights
+                            topic_words = topic_model.get_topic(selected_topic_wc)
+                            if topic_words:
+                                # Create word cloud
+                                word_freq = {word: weight for word, weight in topic_words}
+                                
+                                # Generate word cloud
+                                wordcloud = WordCloud(
+                                    width=800, 
+                                    height=400, 
+                                    background_color='white',
+                                    colormap='viridis',
+                                    max_words=50
+                                ).generate_from_frequencies(word_freq)
+                                
+                                # Display word cloud
+                                fig, ax = plt.subplots(figsize=(10, 5))
+                                ax.imshow(wordcloud, interpolation='bilinear')
+                                ax.axis('off')
+                                ax.set_title(f'Word Cloud for Topic {selected_topic_wc}', fontsize=16, pad=20)
+                                st.pyplot(fig)
+                                
+                                # Show top words as text
+                                with st.expander("📝 Top Words & Weights"):
+                                    words_df = pd.DataFrame(topic_words, columns=['Word', 'Weight'])
+                                    st.dataframe(words_df.head(20), use_container_width=True)
+                            else:
+                                st.info("No words available for this topic.")
+                else:
+                    st.info("No topics available for word clouds.")
+            else:
+                st.info("Topic model not available. Please run analysis first.")
+
             st.subheader("📌 Top Topics")
             top_topics_df = topic_model.get_topic_info()
             st.dataframe(top_topics_df, use_container_width=True)
@@ -705,6 +841,8 @@ if uploaded_file:
             # Persist results for expert validation
             st.session_state['analysis_done'] = True
             st.session_state['comments_df'] = comments_df.copy()
+            st.session_state['posts_df'] = posts_df.copy()
+            st.session_state['topic_model'] = topic_model
             topic_validation_df = top_topics_df[top_topics_df['Topic'] != -1][['Topic', 'Name']].copy()
             topic_validation_df['Top Words'] = topic_validation_df['Topic'].apply(
                 lambda topic_id: ", ".join([word for word, _ in topic_model.get_topic(int(topic_id))[:10]])
@@ -755,7 +893,7 @@ if uploaded_file:
             st.success("✅ Analisis Stance Selesai!")
             
             st.subheader("📋 Hasil Stance Analysis (20 Data Teratas)")
-            st.dataframe(comments_df.head(20), use_container_width=True)
+            st.dataframe(filtered_comments_df.head(20), use_container_width=True)
             
             # Evaluation metrics if expert ground truth is available
             if 'expert_stance' in comments_df.columns:
@@ -806,9 +944,9 @@ if uploaded_file:
                 """)
             
             # Show confidence distribution
-            if 'confidence' in comments_df.columns:
+            if 'confidence' in filtered_comments_df.columns:
                 st.subheader("📊 Distribusi Confidence Score")
-                confidence_counts = pd.cut(comments_df['confidence'], bins=[0, 0.6, 0.7, 0.8, 1.0], 
+                confidence_counts = pd.cut(filtered_comments_df['confidence'], bins=[0, 0.6, 0.7, 0.8, 1.0], 
                                          labels=['<0.6', '0.6-0.7', '0.7-0.8', '0.8+']).value_counts()
                 st.bar_chart(confidence_counts)
             
@@ -824,10 +962,65 @@ if uploaded_file:
                 )
 
             # Summary sentiment
-            sentiment_counts = comments_df['sentiment'].value_counts()
+            sentiment_counts = filtered_comments_df['sentiment'].value_counts()
             
             st.subheader("📊 Ringkasan Sentimen/Stance")
-            st.bar_chart(sentiment_counts)
+            
+            # Create interactive Plotly bar chart
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=sentiment_counts.index,
+                    y=sentiment_counts.values,
+                    marker_color=['#FF6B6B', '#4ECDC4', '#45B7D1'],  # Colors for negative, neutral, positive
+                    hovertemplate='<b>%{x}</b><br>Count: %{y}<br>Click to see samples<extra></extra>'
+                )
+            ])
+            
+            fig.update_layout(
+                title="Sentiment Distribution",
+                xaxis_title="Sentiment",
+                yaxis_title="Count",
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Sample Comments Display
+            st.subheader("📝 Sample Comments by Sentiment")
+            
+            # Select sentiment to show samples
+            selected_sentiment = st.selectbox(
+                "Select sentiment to view sample comments:",
+                options=sentiment_counts.index.tolist(),
+                key="sentiment_sample_selector",
+                help="Choose a sentiment category to see random sample comments"
+            )
+            
+            if selected_sentiment:
+                # Get sample comments for selected sentiment
+                sentiment_comments = filtered_comments_df[
+                    filtered_comments_df['sentiment'] == selected_sentiment
+                ]['full_text_comments'].dropna()
+                
+                if not sentiment_comments.empty:
+                    # Show random samples (up to 5)
+                    num_samples = min(5, len(sentiment_comments))
+                    sample_comments = sentiment_comments.sample(n=num_samples, random_state=42)
+                    
+                    st.markdown(f"**Showing {num_samples} random {selected_sentiment.lower()} comments:**")
+                    
+                    for idx, comment in enumerate(sample_comments, 1):
+                        with st.expander(f"💬 Sample {idx}"):
+                            st.write(comment)
+                            # Show preprocessed version too
+                            preprocessed = filtered_comments_df[
+                                filtered_comments_df['full_text_comments'] == comment
+                            ]['full_text_comments_preprocessed'].iloc[0] if len(filtered_comments_df[
+                                filtered_comments_df['full_text_comments'] == comment
+                            ]) > 0 else "N/A"
+                            st.markdown(f"**Preprocessed:** {preprocessed}")
+                else:
+                    st.info(f"No {selected_sentiment.lower()} comments available with current filters.")
             
             # Download button untuk Summary Sentiment
             summary_df = sentiment_counts.reset_index()
