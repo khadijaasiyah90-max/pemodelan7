@@ -630,6 +630,9 @@ if uploaded_file:
                 logging.info("Initializing BERTopic model")
                 topic_model = BERTopic(embedding_model=embedding_model)
                 
+                # Store model in session state immediately
+                st.session_state['topic_model'] = topic_model
+                
                 # Progress 2: Fitting & Transforming with detailed progress
                 st.markdown("---")
                 st.subheader("🔄 Tahap 2/4: Fitting dan Transforming Dokumen")
@@ -788,9 +791,6 @@ if uploaded_file:
             # ========== WORD CLOUDS PER TOPIC ==========
             st.subheader("☁️ Word Clouds per Topic")
             
-            # Get topic model from session state
-            topic_model = st.session_state.get('topic_model')
-            
             if topic_model is not None:
                 # Get available topics for word clouds
                 available_topics = [topic for topic in topic_model.get_topics().keys() if topic != -1]
@@ -842,8 +842,12 @@ if uploaded_file:
                 st.info("Topic model not available. Please run analysis first.")
 
             st.subheader("📌 Top Topics")
-            top_topics_df = topic_model.get_topic_info()
-            st.dataframe(top_topics_df, use_container_width=True)
+            if topic_model is not None:
+                top_topics_df = topic_model.get_topic_info()
+                st.dataframe(top_topics_df, use_container_width=True)
+            else:
+                st.error("Topic model is not available. Please run the analysis first.")
+                top_topics_df = pd.DataFrame()  # Create empty dataframe to prevent further errors
 
             # Persist results for expert validation
             st.session_state['analysis_done'] = True
