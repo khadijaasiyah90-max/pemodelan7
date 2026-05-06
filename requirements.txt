@@ -11,6 +11,7 @@ transformers
 torch
 wordcloud
 matplotlib
+pillow
 Cython
 nltk
 Sastrawi
