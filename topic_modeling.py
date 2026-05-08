@@ -50,6 +50,16 @@ try:
     # ===== PREPROCESSING =====
     print("\n🧹 Preprocessing...")
     
+    # Custom stopwords for political content
+    custom_stopwords = [
+        "presiden", "prabowo", "indonesia", "rakyat", "negara",
+        "pak", "bapak", "yg", "aja", "nya", "nih", "sih",
+        "jadi", "yang", "dan", "atau", "dengan", "untuk", "dari",
+        "dalam", "pada", "ke", "di", "itu", "ini", "adalah",
+        "jika", "maka", "karena", "seperti", "sudah", "belum",
+        "akan", "bisa", "harus", "ingin", "mau", "perlu"
+    ]
+    
     def preprocess(text):
         if pd.isna(text):
             return ""
@@ -63,7 +73,7 @@ try:
     
     docs = df[text_col].fillna('').astype(str).apply(preprocess).tolist()
     docs = [d for d in docs if len(d.strip()) > 10]
-    docs = docs[:1000]  # Limit for speed
+    # docs = docs[:1000]  # Limit for speed - commented out for full dataset
     
     print(f"✅ Processed {len(docs)} documents")
     
@@ -82,7 +92,12 @@ try:
     print("    ✅ Loaded")
     
     print("  - Vectorizer...")
-    vectorizer = CountVectorizer(ngram_range=(1, 2), min_df=2, max_df=0.9)
+    vectorizer = CountVectorizer(
+        ngram_range=(1, 2), 
+        min_df=5, 
+        max_df=0.9,
+        stop_words=custom_stopwords
+    )
     print("    ✅ Loaded")
     
     print("  - UMAP...")
@@ -97,7 +112,7 @@ try:
     
     print("  - HDBSCAN...")
     hdbscan_model = HDBSCAN(
-        min_cluster_size=20,
+        min_cluster_size=80,
         metric='euclidean',
         cluster_selection_method='eom',
         prediction_data=True
@@ -117,8 +132,8 @@ try:
         hdbscan_model=hdbscan_model,
         vectorizer_model=vectorizer,
         representation_model=representation,
-        nr_topics="auto",
-        min_topic_size=20,
+        nr_topics=12,
+        min_topic_size=80,
         calculate_probabilities=True,
         verbose=False
     )
