@@ -378,7 +378,81 @@ def calculate_topic_metrics(_topic_model, _docs):
         logging.error(f"Error calculating topic metrics: {e}")
         return {"error": str(e)}
 
-@st.cache_data
+
+def get_time_window_slices(posts_df, months):
+    """Return time windows and topic distribution for each window."""
+    if 'created_at' not in posts_df.columns or 'Topik' not in posts_df.columns:
+        return None
+
+    df = posts_df.copy()
+    if not np.issubdtype(df['created_at'].dtype, np.datetime64):
+        df['created_at'] = pd.to_datetime(df['created_at'], errors='coerce')
+
+    df = df.dropna(subset=['created_at'])
+    if df.empty:
+        return None
+
+    windows = []
+    start = df['created_at'].min()
+    end_date = df['created_at'].max()
+
+    while start < end_date:
+        end = start + pd.DateOffset(months=months)
+        window = df[(df['created_at'] >= start) & (df['created_at'] < end)]
+        topic_counts = window['Topik'].value_counts(dropna=True)
+        top_topics = ', '.join([f"{int(t)}({c})" for t, c in topic_counts.head(3).items()]) if not topic_counts.empty else "-"
+        windows.append({
+            'window_start': start,
+            'window_end': end,
+            'document_count': len(window),
+            'top_topics': top_topics,
+            'topic_diversity': window['Topik'].nunique()
+        })
+        start = end
+
+    return pd.DataFrame(windows)
+
+
+def render_time_frame_comparison(posts_df):
+    """Render comparison between 2-month and 3-month time windows."""
+    if posts_df is None or 'Topik' not in posts_df.columns:
+        return
+
+    st.subheader("🕒 Time Frame Comparison: 2 Bulan vs 3 Bulan")
+    frame_choice = st.radio(
+        "Pilih time frame untuk komparasi:",
+        ["2 bulan", "3 bulan"],
+        horizontal=True,
+        key="time_frame_choice"
+    )
+
+    months = 2 if frame_choice == "2 bulan" else 3
+    time_df = get_time_window_slices(posts_df, months)
+    if time_df is None or time_df.empty:
+        st.warning("Tidak ada data yang cukup untuk analisis time frame.")
+        return
+
+    st.markdown(f"**Analisis window {months} bulan**")
+    st.dataframe(time_df[['window_start', 'window_end', 'document_count', 'topic_diversity', 'top_topics']].head(12), use_container_width=True)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=time_df['window_start'].dt.strftime('%Y-%m-%d'),
+        y=time_df['document_count'],
+        marker_color='royalblue'
+    ))
+    fig.update_layout(
+        title=f"Jumlah dokumen per window {months} bulan",
+        xaxis_title="Window Start",
+        yaxis_title="Jumlah Dokumen",
+        template='plotly_white',
+        height=400
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**Rekomendasi cepat:** jika setiap window 2 bulan memiliki sangat sedikit dokumen, gunakan 3 bulan untuk stabilitas topik; jika 2 bulan masih punya >100 dokumen per window, gunakan 2 bulan untuk deteksi perubahan lebih cepat.")
+
+
 def cached_stance_analysis(_sentiment_model, _comments_list, _batch_size=20):
     """Cached wrapper for stance analysis on comments with confidence threshold"""
     logging.info(f"Starting cached stance analysis on {len(_comments_list)} comments")
@@ -437,7 +511,7 @@ def preprocess_text(text):
     
     text = str(text).lower()
     text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'@\w+', '', text)
+    text = re.sub(r'@(\w+)', r'\1', text)
     text = re.sub(r'#(\w+)', r'\1', text)
     text = re.sub(r'[^\x00-\x7f]', ' ', text)
     text = re.sub(r'\d+', '', text)
@@ -1469,6 +1543,9 @@ if uploaded_file:
             fig = topic_model.visualize_topics_over_time(topics_over_time)
             st.plotly_chart(fig, use_container_width=True)
             
+            # Time frame comparison analysis
+            render_time_frame_comparison(posts_df)
+            
             # Save the plot
             fig.write_html(os.path.join(results_dir, f"topics_over_time_{timestamp}.html"))
             
@@ -1543,6 +1620,14 @@ if uploaded_file:
             if topic_model is not None:
                 top_topics_df = topic_model.get_topic_info()
                 st.dataframe(top_topics_df, use_container_width=True)
+
+                st.subheader("🔗 Hubungan Post - Topik - Stance")
+                if 'sentiment' in df.columns:
+                    topic_sentiment = df.dropna(subset=['Topik', 'sentiment']).groupby(['Topik', 'sentiment']).size().reset_index(name='Jumlah')
+                    st.dataframe(topic_sentiment, use_container_width=True)
+                    st.markdown("**Insight:** jumlah post per topik dan sentimen komentar membantu melihat topik mana yang memicu dukungan, penolakan, atau netralitas.")
+                else:
+                    st.info("Sentiment belum tersedia. Jalankan stance analysis untuk melihat hubungan post-topik-stance.")
             else:
                 st.error("Topic model is not available. Please run the analysis first.")
                 top_topics_df = pd.DataFrame()  # Create empty dataframe to prevent further errors
