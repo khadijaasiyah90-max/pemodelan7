@@ -86,7 +86,7 @@ st.set_page_config(page_title="Dynamic Topic Modeling & Stance Analysis", layout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 st.title("📊 Dynamic Topic Modeling & Stance Analysis")
-st.write("Analisis topik dinamis pada unggahan dan analisis stance komentar per postingan berdasarkan topik dan periode 3 bulanan")
+st.write("Memantau evolusi topik pada unggahan dan memetakan opini (stance) publik melalui komentar secara kuartalan")
 
 # Upload dataset
 uploaded_file = st.file_uploader("Upload dataset CSV", type=["csv"])
