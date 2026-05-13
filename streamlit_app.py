@@ -434,36 +434,62 @@ def get_time_window_slices(posts_df, months):
     return pd.DataFrame(windows)
 
 
-def render_time_frame_comparison(posts_df):
-    """Render time frame analysis with 3-month windows."""
-    if posts_df is None or 'Topik' not in posts_df.columns:
-        return
-
-    st.subheader("🕒 Analisis Time Frame: 3 Bulan")
+def get_top_topics_per_period(posts_df, topic_model, months_per_period=3):
+    """Get top topics for each time period."""
+    if topic_model is None or posts_df.empty:
+        return None
     
-    months = 3
-    time_df = get_time_window_slices(posts_df, months)
-    if time_df is None or time_df.empty:
-        st.warning("Tidak ada data yang cukup untuk analisis time frame.")
-        return
-
-    st.markdown("**Analisis window 3 bulan**")
-    st.dataframe(time_df[['window_start', 'window_end', 'document_count', 'topic_diversity', 'top_topics']].head(12), use_container_width=True)
-
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=time_df['window_start'].dt.strftime('%Y-%m-%d'),
-        y=time_df['document_count'],
-        marker_color='royalblue'
-    ))
-    fig.update_layout(
-        title="Jumlah dokumen per window 3 bulan",
-        xaxis_title="Window Start",
-        yaxis_title="Jumlah Dokumen",
-        template='plotly_white',
-        height=400
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    # Ensure created_at is datetime
+    df = posts_df.copy()
+    if not pd.api.types.is_datetime64_any_dtype(df['created_at']):
+        df['created_at'] = pd.to_datetime(df['created_at'], errors='coerce', utc=True)
+    else:
+        df['created_at'] = df['created_at'].dt.tz_convert('UTC').dt.tz_localize(None)
+    
+    df = df.dropna(subset=['created_at'])
+    if df.empty:
+        return None
+    
+    # Get time periods
+    start_date = df['created_at'].min()
+    end_date = df['created_at'].max()
+    
+    periods = []
+    current_start = start_date
+    
+    while current_start < end_date:
+        current_end = current_start + pd.DateOffset(months=months_per_period)
+        period_data = df[(df['created_at'] >= current_start) & (df['created_at'] < current_end)]
+        
+        if not period_data.empty:
+            # Count topics in this period
+            topic_counts = period_data['Topik'].value_counts()
+            
+            # Get topic info for this period
+            period_topics = []
+            for topic_id, count in topic_counts.head(10).items():  # Top 10 topics per period
+                if topic_id != -1:  # Skip outlier topic
+                    topic_info = topic_model.get_topic_info()
+                    topic_row = topic_info[topic_info['Topic'] == topic_id]
+                    if not topic_row.empty:
+                        period_topics.append({
+                            'Topic': topic_id,
+                            'Name': topic_row['Name'].iloc[0],
+                            'Count': count,
+                            'Percentage': (count / len(period_data)) * 100
+                        })
+            
+            if period_topics:
+                periods.append({
+                    'period_start': current_start,
+                    'period_end': current_end,
+                    'total_posts': len(period_data),
+                    'topics': period_topics
+                })
+        
+        current_start = current_end
+    
+    return periods
 
     st.markdown("**Rekomendasi cepat:** jika setiap window 2 bulan memiliki sangat sedikit dokumen, gunakan 3 bulan untuk stabilitas topik; jika 2 bulan masih punya >100 dokumen per window, gunakan 2 bulan untuk deteksi perubahan lebih cepat.")
 
@@ -1523,7 +1549,22 @@ if uploaded_file:
                 status_text.text("🔄 Tahap 3/4: Menghitung Topics Over Time...")
                 progress_bar.progress(0.75)
                 logging.info("Calculating topics over time")
-                topics_over_time = cached_topics_over_time(topic_model, docs, timestamps, _nr_bins=20)
+                
+                # Calculate nr_bins for 3-month intervals
+                if timestamps:
+                    timestamps_dt = pd.to_datetime(timestamps, errors='coerce')
+                    timestamps_dt = timestamps_dt.dropna()
+                    if len(timestamps_dt) > 1:
+                        time_range_days = (timestamps_dt.max() - timestamps_dt.min()).days
+                        time_range_months = time_range_days / 30.44  # Average days per month
+                        nr_bins = max(1, int(time_range_months / 3))  # 3-month intervals
+                        logging.info(f"Calculated nr_bins={nr_bins} for {time_range_months:.1f} months range")
+                    else:
+                        nr_bins = 10
+                else:
+                    nr_bins = 10
+                
+                topics_over_time = cached_topics_over_time(topic_model, docs, timestamps, _nr_bins=nr_bins)
                 
                 # Progress 4: Complete
                 status_text.text("✅ Tahap 4/4: Selesai!")
@@ -1554,7 +1595,7 @@ if uploaded_file:
                 filtered_posts_df = posts_df
                 filtered_comments_df = comments_df
 
-            st.subheader("📈 Topics Over Time")
+            st.subheader("📈 Topics Over Time (3-Month Intervals)")
             fig = topic_model.visualize_topics_over_time(topics_over_time)
             st.plotly_chart(fig, use_container_width=True)
             
@@ -1562,15 +1603,15 @@ if uploaded_file:
             render_time_frame_comparison(posts_df)
             
             # Save the plot
-            fig.write_html(os.path.join(results_dir, f"topics_over_time_{timestamp}.html"))
+            fig.write_html(os.path.join(results_dir, f"topics_over_time_3month_{timestamp}.html"))
             
             # Download button untuk Topics Over Time
             col1, col2 = st.columns(2)
             with col1:
                 st.download_button(
-                    label="💾 Simpan Topics Over Time (HTML)",
+                    label="💾 Simpan Topics Over Time (3-Month Intervals)",
                     data=convert_figure_to_html(fig),
-                    file_name="topics_over_time.html",
+                    file_name="topics_over_time_3month_intervals.html",
                     mime="text/html",
                     key="download_topics_over_time"
                 )
@@ -1631,8 +1672,34 @@ if uploaded_file:
             else:
                 st.info("Topic model not available. Please run analysis first.")
 
-            st.subheader("📌 Top Topics")
+            st.subheader("📌 Top Topics per Periode (3 Bulan)")
             if topic_model is not None:
+                periods_data = get_top_topics_per_period(posts_df, topic_model, months_per_period=3)
+                
+                if periods_data:
+                    for i, period in enumerate(periods_data):
+                        period_start = period['period_start'].strftime('%Y-%m-%d')
+                        period_end = period['period_end'].strftime('%Y-%m-%d')
+                        
+                        st.markdown(f"**Periode {i+1}: {period_start} sampai {period_end}**")
+                        st.markdown(f"*Total posts: {period['total_posts']}*")
+                        
+                        # Create dataframe for this period
+                        period_df = pd.DataFrame(period['topics'])
+                        if not period_df.empty:
+                            period_df = period_df[['Topic', 'Name', 'Count', 'Percentage']].round({'Percentage': 1})
+                            st.dataframe(period_df, use_container_width=True)
+                        else:
+                            st.info("Tidak ada topik untuk periode ini.")
+                        
+                        # Add some spacing between periods
+                        if i < len(periods_data) - 1:
+                            st.markdown("---")
+                else:
+                    st.warning("Tidak ada data periode yang cukup.")
+                    
+                # Overall top topics (for reference)
+                st.markdown("### 📊 Top Topics Keseluruhan")
                 top_topics_df = topic_model.get_topic_info()
                 st.dataframe(top_topics_df, use_container_width=True)
 
@@ -1676,8 +1743,38 @@ if uploaded_file:
             # Save comments with stance
             comments_df.to_csv(os.path.join(results_dir, f"comments_with_stance_{timestamp}.csv"), index=False)
             
-            # Save top topics
-            top_topics_df.to_csv(os.path.join(results_dir, f"top_topics_{timestamp}.csv"), index=False)
+            # Save top topics per period
+            if periods_data:
+                with open(os.path.join(results_dir, f"top_topics_per_period_{timestamp}.json"), "w", encoding="utf-8") as f:
+                    # Convert datetime objects to strings for JSON serialization
+                    serializable_periods = []
+                    for period in periods_data:
+                        serializable_period = {
+                            'period_start': period['period_start'].isoformat(),
+                            'period_end': period['period_end'].isoformat(),
+                            'total_posts': period['total_posts'],
+                            'topics': period['topics']
+                        }
+                        serializable_periods.append(serializable_period)
+                    json.dump(serializable_periods, f, indent=2, ensure_ascii=False)
+                
+                # Also save as CSV format for easier analysis
+                all_period_topics = []
+                for i, period in enumerate(periods_data):
+                    period_start = period['period_start'].strftime('%Y-%m-%d')
+                    period_end = period['period_end'].strftime('%Y-%m-%d')
+                    for topic in period['topics']:
+                        all_period_topics.append({
+                            'Period': f"{i+1} ({period_start} to {period_end})",
+                            'Topic_ID': topic['Topic'],
+                            'Topic_Name': topic['Name'],
+                            'Count': topic['Count'],
+                            'Percentage': round(topic['Percentage'], 1)
+                        })
+                
+                if all_period_topics:
+                    period_topics_df = pd.DataFrame(all_period_topics)
+                    period_topics_df.to_csv(os.path.join(results_dir, f"top_topics_per_period_{timestamp}.csv"), index=False)
             
             # Save topic validation
             topic_validation_df.to_csv(os.path.join(results_dir, f"topic_validation_{timestamp}.csv"), index=False)
@@ -1705,6 +1802,16 @@ if uploaded_file:
                     file_name="top_topics.csv",
                     mime="text/csv",
                     key="download_top_topics"
+                )
+            
+            # Download button untuk Top Topics per Periode
+            if periods_data and all_period_topics:
+                st.download_button(
+                    label="💾 Simpan Top Topics per Periode (CSV)",
+                    data=convert_df_to_csv(period_topics_df),
+                    file_name="top_topics_per_period.csv",
+                    mime="text/csv",
+                    key="download_top_topics_per_period"
                 )
 
             # ========== STANCE ANALYSIS ==========
