@@ -586,6 +586,144 @@ def get_top_topics_per_period(posts_df, topic_model, months_per_period=3):
     st.markdown("**Rekomendasi cepat:** jika setiap window 2 bulan memiliki sangat sedikit dokumen, gunakan 3 bulan untuk stabilitas topik; jika 2 bulan masih punya >100 dokumen per window, gunakan 2 bulan untuk deteksi perubahan lebih cepat.")
 
 
+def render_vertical_report(posts_df, comments_df, topic_model, months_per_period=3):
+    """
+    Render laporan vertikal yang bersifat linear (cocok untuk print/PDF):
+    Periode (3 bulan) -> Topik -> Postingan utama -> Tabel komentar + Stance
+    """
+    if posts_df is None or posts_df.empty:
+        st.info("Tidak ada data postingan untuk membuat laporan vertikal.")
+        return
+
+    df_posts = posts_df.copy()
+    df_comments = comments_df.copy() if comments_df is not None else pd.DataFrame()
+
+    # Pastikan kolom waktu dalam datetime dan buat kuartal
+    if not pd.api.types.is_datetime64_any_dtype(df_posts['created_at']):
+        df_posts['created_at'] = pd.to_datetime(df_posts['created_at'], errors='coerce')
+    df_posts = df_posts.dropna(subset=['created_at'])
+    df_posts['period_q'] = df_posts['created_at'].dt.to_period('Q')
+
+    # Jika comments memiliki timestamps, gunakan; jika tidak, hanya join by conversation_id_str
+    if 'created_at' in df_comments.columns and not pd.api.types.is_datetime64_any_dtype(df_comments['created_at']):
+        try:
+            df_comments['created_at'] = pd.to_datetime(df_comments['created_at'], errors='coerce')
+        except Exception:
+            pass
+
+    periods = sorted(df_posts['period_q'].unique())
+    if not periods:
+        st.info("Tidak ada periode waktu yang valid untuk laporan.")
+        return
+
+    # Helper untuk pewarnaan stance
+    def _style_stance(val):
+        if pd.isna(val):
+            return ''
+        v = str(val).upper()
+        if v in ('POSITIVE', 'PRO', 'PROBABLE_POSITIVE'):
+            return 'background-color: #d4f8e8; color: #084f3f'
+        if v in ('NEGATIVE', 'CONTRA', 'NEG'):
+            return 'background-color: #ffd6d6; color: #7a1f1f'
+        if v in ('NEUTRAL', 'NEUTRAL '):
+            return 'background-color: #eef6fb; color: #0b4f6c'
+        return ''
+
+    for period in periods:
+        period_mask = df_posts['period_q'] == period
+        period_posts = df_posts[period_mask].sort_values('created_at')
+        if period_posts.empty:
+            continue
+
+        # Header periode
+        period_label = f"Periode: {period.start_time.strftime('%b %Y')} - {period.end_time.strftime('%b %Y')}"
+        st.header(period_label)
+
+        # Get topics present in this period
+        topics_in_period = period_posts['Topik'].dropna().unique().tolist()
+        if not topics_in_period:
+            st.info("Tidak ada topik terdeteksi pada periode ini.")
+            st.markdown("---")
+            continue
+
+        for topic_id in sorted(topics_in_period):
+            if int(topic_id) == -1:
+                continue
+            # Topic title if available
+            topic_name = None
+            try:
+                topic_info = topic_model.get_topic_info()
+                row = topic_info[topic_info['Topic'] == int(topic_id)]
+                if not row.empty:
+                    topic_name = row['Name'].iloc[0]
+            except Exception:
+                topic_name = None
+
+            st.subheader(f"Topik {int(topic_id)}" + (f" - {topic_name}" if topic_name else ""))
+
+            # Pilih postingan utama: gunakan postingan dengan jumlah komentar terbanyak dalam periode dan topik
+            posts_for_topic = period_posts[period_posts['Topik'] == topic_id]
+            if posts_for_topic.empty:
+                st.info("Tidak ada postingan untuk topik ini pada periode ini.")
+                continue
+
+            # Hitung jumlah komentar per postingan jika tersedia
+            if not df_comments.empty and 'conversation_id_str' in df_comments.columns:
+                comment_counts = df_comments.groupby('conversation_id_str').size().to_dict()
+                posts_for_topic['num_comments'] = posts_for_topic['conversation_id_str'].map(lambda x: comment_counts.get(x, 0))
+                main_post = posts_for_topic.sort_values('num_comments', ascending=False).iloc[0]
+            else:
+                main_post = posts_for_topic.iloc[0]
+
+            # Tampilkan postingan utama
+            st.markdown("**Postingan Utama:**")
+            st.info(main_post.get('full_text', '')[:10000])
+
+            # Ambil komentar terkait
+            if not df_comments.empty and 'conversation_id_str' in df_comments.columns:
+                related_comments = df_comments[df_comments['conversation_id_str'] == main_post['conversation_id_str']].copy()
+            else:
+                related_comments = pd.DataFrame()
+
+            if related_comments.empty:
+                st.write("Tidak ada komentar terkait untuk postingan ini.")
+                st.markdown("---")
+                continue
+
+            # Siapkan tampilan tabel komentar dengan stance
+            display_cols = []
+            if 'full_text_comments' in related_comments.columns:
+                display_cols.append('full_text_comments')
+            elif 'full_text_comments_preprocessed' in related_comments.columns:
+                display_cols.append('full_text_comments_preprocessed')
+
+            if 'sentiment' in related_comments.columns:
+                display_cols.append('sentiment')
+            if 'confidence' in related_comments.columns:
+                display_cols.append('confidence')
+
+            if not display_cols:
+                st.write("Komentar tersedia tetapi kolom konten/stance tidak ditemukan.")
+                st.markdown("---")
+                continue
+
+            comments_display = related_comments[display_cols].reset_index(drop=True)
+
+            # Apply styling to stance column if available
+            try:
+                if 'sentiment' in comments_display.columns:
+                    styled = comments_display.style.applymap(_style_stance, subset=['sentiment'])
+                    st.dataframe(styled, use_container_width=True)
+                else:
+                    st.dataframe(comments_display, use_container_width=True)
+            except Exception:
+                # Fallback plain table
+                st.dataframe(comments_display, use_container_width=True)
+
+            st.markdown("---")
+
+
+
 def cached_stance_analysis(_sentiment_model, _comments_list, _batch_size=20):
     """Cached wrapper for stance analysis on comments with confidence threshold"""
     logging.info(f"Starting cached stance analysis on {len(_comments_list)} comments")
@@ -1803,6 +1941,16 @@ if uploaded_file:
                 st.markdown("### 📊 Top Topics Keseluruhan")
                 top_topics_df = topic_model.get_topic_info()
                 st.dataframe(top_topics_df, use_container_width=True)
+
+                # Tambahkan laporan vertikal untuk keperluan print/PDF
+                st.divider()
+                st.subheader("📄 Laporan Vertikal (Printable)")
+                try:
+                    rp_posts = filtered_posts_df if 'filtered_posts_df' in locals() else posts_df
+                    rp_comments = filtered_comments_df if 'filtered_comments_df' in locals() else comments_df
+                    render_vertical_report(rp_posts, rp_comments, topic_model, months_per_period=3)
+                except Exception as e:
+                    logging.warning(f"Gagal menampilkan laporan vertikal: {e}")
 
                 st.subheader("🔗 Hubungan Post - Topik - Stance")
                 if 'sentiment' in df.columns:
