@@ -171,88 +171,94 @@ def render_post_with_comments(
     post_id: str,
     post_text: str,
     comments_data: pd.DataFrame,
-    post_stats: dict
+    post_stats: dict,
+    show_all: bool = False
 ) -> None:
-    """Render a single post with its comments in accordion style."""
+    """Render a single post with its comments in accordion style or full vertical mode."""
     
-    with st.expander(f"📌 Unggahan: {post_text[:80]}...", expanded=False):
-        # Mini-summary
-        st.subheader("📊 Distribusi Sikap")
-        render_mini_summary(post_stats)
-        
-        # Distribution chart
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            render_stance_distribution_chart(post_stats)
-        
-        # Full post text
-        with col2:
-            st.write("**Teks Lengkap Unggahan:**")
-            st.write(post_text)
-        
-        # Divider
-        st.divider()
-        
-        # Comments table
-        st.subheader("💬 Komentar dan Analisis Sikap")
-        
-        # Prepare comments display
-        display_data = []
-        for _, row in comments_data.iterrows():
-            display_data.append({
-                "Komentar": row["full_text_comments"][:100] + ("..." if len(str(row["full_text_comments"])) > 100 else ""),
-                "Sikap": row["stance_label"],
-                "Bobot": f"{row['stance_weight']:.2f}",
-                "Alasan": row.get("stance_reasoning", "")[:100]
-            })
-        
-        # Display as dataframe with custom styling
-        display_df = pd.DataFrame(display_data)
-        
-        # Color code the stance column
-        def color_stance(val):
-            if val == "Mendukung":
-                return "background-color: #90EE90"
-            elif val == "Menolak":
-                return "background-color: #FFB6C1"
-            else:
-                return "background-color: #D3D3D3"
-        
-        styled_df = display_df.style.applymap(
-            color_stance,
-            subset=["Sikap"]
-        )
-        
-        st.dataframe(styled_df, use_container_width=True, hide_index=True)
-        
-        # Detailed view toggle
-        if st.checkbox(f"Tampilkan detail lengkap untuk {post_id}", key=f"details_{post_id}"):
-            st.subheader("Detail Lengkap Komentar")
-            for idx, (_, row) in enumerate(comments_data.iterrows()):
-                with st.expander(
-                    f"Komentar {idx + 1}: {row['full_text_comments'][:60]}...",
-                    expanded=False
-                ):
-                    col1, col2 = st.columns([3, 1])
-                    
-                    with col1:
-                        st.write("**Teks Komentar:**")
-                        st.write(row["full_text_comments"])
-                        
-                        st.write("\n**Alasan Analisis:**")
-                        st.write(row.get("stance_reasoning", "Tidak tersedia"))
-                    
-                    with col2:
-                        st.write("**Sikap:**")
-                        stance_text = f"{row['stance_label'].upper()}"
-                        st.markdown(get_stance_badge_html(row["stance_label"], row["stance_weight"]), unsafe_allow_html=True)
-                        
-                        st.write("\n**Bobot:**")
-                        st.metric("", f"{row['stance_weight']:.2f}")
+    summary_line = (
+        f"Distribusi: 🟩 {post_stats.get('mendukung_pct', 0):.0f}%  | "
+        f"🟥 {post_stats.get('menolak_pct', 0):.0f}%  | "
+        f"⬜ {post_stats.get('netral_pct', 0):.0f}%"
+    )
+    title_text = post_text if len(post_text) <= 120 else post_text[:120] + "..."
 
+    if show_all:
+        st.markdown(f"### 📌 Unggahan: {title_text}")
+        st.markdown(f"**{summary_line}**")
+        st.write("---")
+        st.write("**Teks Unggahan:**")
+        st.write(post_text)
+        st.write("---")
+    else:
+        with st.expander(f"🔽 Unggahan: {title_text}", expanded=False):
+            st.markdown(f"**{summary_line}**")
+            st.write("---")
+            
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write("**Teks Unggahan:**")
+                st.write(post_text)
+            with col2:
+                st.write("**Ringkasan Sikap**")
+                st.markdown(f"- 🟩 Mendukung: **{post_stats.get('mendukung_pct', 0):.0f}%**")
+                st.markdown(f"- 🟥 Menolak: **{post_stats.get('menolak_pct', 0):.0f}%**")
+                st.markdown(f"- ⬜ Netral: **{post_stats.get('netral_pct', 0):.0f}%**")
+                st.markdown(f"- 🎯 Avg Confidence: **{post_stats.get('avg_weight', 0):.2f}**")
 
-def main():
-    """Main Streamlit app."""
+            st.write("---")
+            st.subheader("💬 Komentar dan Analisis Sikap")
+
+            for idx, row in comments_data.iterrows():
+                badge_html = get_stance_badge_html(row["stance_label"], row["stance_weight"])
+                truncated_comment = row["full_text_comments"]
+                if len(truncated_comment) > 220:
+                    truncated_comment = truncated_comment[:220] + "..."
+
+                st.markdown(f"**↳ Komentar {idx + 1}:** {truncated_comment}")
+                st.markdown(f"- {badge_html}", unsafe_allow_html=True)
+                st.markdown(f"- **Bobot:** {row['stance_weight']:.2f}")
+                st.markdown(f"- **Alasan Singkat:** {row.get('stance_reasoning', 'Tidak tersedia')}")
+                st.write("---")
+
+            if st.checkbox(f"Tampilkan detail lengkap untuk {post_id}", key=f"details_{post_id}"):
+                st.subheader("Detail Lengkap Komentar")
+                for idx, row in comments_data.iterrows():
+                    with st.expander(
+                        f"Komentar {idx + 1}: {row['full_text_comments'][:60]}...",
+                        expanded=False
+                    ):
+                        col1, col2 = st.columns([3, 1])
+                        
+                        with col1:
+                            st.write("**Teks Komentar:**")
+                            st.write(row["full_text_comments"])
+                            
+                            st.write("**Alasan Analisis:**")
+                            st.write(row.get("stance_reasoning", "Tidak tersedia"))
+                        
+                        with col2:
+                            st.write("**Sikap:**")
+                            st.markdown(get_stance_badge_html(row["stance_label"], row["stance_weight"]), unsafe_allow_html=True)
+                            
+                            st.write("**Bobot:**")
+                            st.metric("", f"{row['stance_weight']:.2f}")
+
+        return
+
+    st.subheader("💬 Komentar dan Analisis Sikap")
+
+    for idx, row in comments_data.iterrows():
+        badge_html = get_stance_badge_html(row["stance_label"], row["stance_weight"])
+        truncated_comment = row["full_text_comments"]
+        if len(truncated_comment) > 220:
+            truncated_comment = truncated_comment[:220] + "..."
+
+        st.markdown(f"**↳ Komentar {idx + 1}:** {truncated_comment}")
+        st.markdown(f"- {badge_html}", unsafe_allow_html=True)
+        st.markdown(f"- **Bobot:** {row['stance_weight']:.2f}")
+        st.markdown(f"- **Alasan Singkat:** {row.get('stance_reasoning', 'Tidak tersedia')}")
+        st.write("---")
     
     st.title("📊 Analisis Sikap Granular - Dashboard Interaktif")
     st.write("Tampilan hierarki: Unggahan Utama → Komentar → Analisis Sikap dengan Color-Coding & Filter Interaktif")
@@ -393,6 +399,11 @@ def main():
         else:
             selected_topics = ["Semua"]
     
+    show_all_posts = st.sidebar.checkbox(
+        "Tampilkan semua unggahan secara vertikal (print friendly)",
+        value=False
+    )
+    
     # Main content area
     if has_stance_analysis:
         # Apply filters
@@ -474,7 +485,8 @@ def main():
                     post_id=post_id,
                     post_text=post_text,
                     comments_data=post_comments,
-                    post_stats=post_stats
+                    post_stats=post_stats,
+                    show_all=show_all_posts
                 )
     else:
         st.info("📌 Jalankan analisis stance untuk melihat hasil detail.")

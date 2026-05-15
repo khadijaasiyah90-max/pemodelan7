@@ -1,0 +1,120 @@
+[
+  {
+    "period_start": "2020-06-26T02:51:38",
+    "period_end": "2020-09-26T02:51:38",
+    "total_posts": 2,
+    "topics": [
+      {
+        "Topic": 0,
+        "Name": "0_indonesia_bukan_jokowi_presiden prabowo",
+        "Count": 2,
+        "Percentage": 100.0
+      }
+    ]
+  },
+  {
+    "period_start": "2025-06-26T02:51:38",
+    "period_end": "2025-09-26T02:51:38",
+    "total_posts": 1,
+    "topics": [
+      {
+        "Topic": 8,
+        "Name": "8_pangan_ketahanan pangan_cita presiden_bergizi gratis",
+        "Count": 1,
+        "Percentage": 100.0
+      }
+    ]
+  },
+  {
+    "period_start": "2025-09-26T02:51:38",
+    "period_end": "2025-12-26T02:51:38",
+    "total_posts": 4577,
+    "topics": [
+      {
+        "Topic": 0,
+        "Name": "0_indonesia_bukan_jokowi_presiden prabowo",
+        "Count": 1993,
+        "Percentage": 43.54380598645401
+      },
+      {
+        "Topic": 1,
+        "Name": "1_kerja_pulang kerja_kerja kerja_besok",
+        "Count": 447,
+        "Percentage": 9.766222416429976
+      },
+      {
+        "Topic": 2,
+        "Name": "2_prabowo bangun_rekonstruksi pascabencana_rekonstruksi_bangun rekonstruksi",
+        "Count": 414,
+        "Percentage": 9.045226130653267
+      },
+      {
+        "Topic": 3,
+        "Name": "3_prabowo pulihkan_bangkit pasca_pulihkan infrastruktur_pasca bencana",
+        "Count": 239,
+        "Percentage": 5.221760978807079
+      },
+      {
+        "Topic": 4,
+        "Name": "4_memulihkan warga_warga terdampak_bencana_korban bencana",
+        "Count": 139,
+        "Percentage": 3.0369237491806857
+      },
+      {
+        "Topic": 5,
+        "Name": "5_sumatera_bencana sumatera_korban bencana_warga terdampak",
+        "Count": 123,
+        "Percentage": 2.6873497924404632
+      },
+      {
+        "Topic": 6,
+        "Name": "6_hutan_lingkungan_kayu_presiden prabowo",
+        "Count": 110,
+        "Percentage": 2.403320952589032
+      },
+      {
+        "Topic": 7,
+        "Name": "7_ijazah_joko widodo_polda metro_ijazah palsu",
+        "Count": 78,
+        "Percentage": 1.7041730391085863
+      },
+      {
+        "Topic": 8,
+        "Name": "8_pangan_ketahanan pangan_cita presiden_bergizi gratis",
+        "Count": 74,
+        "Percentage": 1.616779549923531
+      }
+    ]
+  },
+  {
+    "period_start": "2025-12-26T02:51:38",
+    "period_end": "2026-03-26T02:51:38",
+    "total_posts": 20,
+    "topics": [
+      {
+        "Topic": 0,
+        "Name": "0_indonesia_bukan_jokowi_presiden prabowo",
+        "Count": 9,
+        "Percentage": 45.0
+      },
+      {
+        "Topic": 4,
+        "Name": "4_memulihkan warga_warga terdampak_bencana_korban bencana",
+        "Count": 2,
+        "Percentage": 10.0
+      },
+      {
+        "Topic": 1,
+        "Name": "1_kerja_pulang kerja_kerja kerja_besok",
+        "Count": 2,
+        "Percentage": 10.0
+      },
+      {
+        "Topic": 8,
+        "Name": "8_pangan_ketahanan pangan_cita presiden_bergizi gratis",
+        "Count": 1,
+        "Percentage": 5.0
+      }
+    ]
+  }
+]
